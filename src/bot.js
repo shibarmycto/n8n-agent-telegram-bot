@@ -5,8 +5,9 @@ const axios = require('axios');
 const token = '7604717632:AAGSdQjNqLMpsE-Xpk4VNe12CcP3jB-OX1w';
 
 // N8N server configuration (you'll need to update this)
-const N8N_SERVER_URL = 'http://your-n8n-server-url'; // Replace with your actual N8N server URL
+const N8N_SERVER_URL = process.env.N8N_SERVER_URL; // Set this as an environment variable
 const N8N_API_KEY = process.env.N8N_API_KEY; // Set this as an environment variable
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Set this as an environment variable
 
 // Create bot instance
 const bot = new TelegramBot(token, { polling: true });
@@ -14,7 +15,7 @@ const bot = new TelegramBot(token, { polling: true });
 // Store user sessions
 const userSessions = {};
 
-// Predefined API options for users to choose from
+// Predefined API options for reference
 const apiOptions = [
   { id: 'openai', name: 'OpenAI API', description: 'ChatGPT, GPT-4 models' },
   { id: 'gemini', name: 'Google Gemini API', description: 'Gemini models' },
@@ -242,29 +243,124 @@ async function createN8NWorkflow(session) {
   }
 }
 
-// Function to construct N8N workflow based on user input
+// Function to analyze user request with AI and determine workflow components
+async function analyzeUserRequest(userInput) {
+  if (!OPENAI_API_KEY) {
+    // Fallback to simple parsing if no OpenAI key
+    return simpleParseRequest(userInput);
+  }
+
+  try {
+    // Optimize for low latency and cost
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: `You are an expert at interpreting user requests for N8N workflow creation. 
+          Analyze the user's request and return a JSON object with the following structure:
+          {
+            "api_choice": "one of: openai, gemini, claude, elevenlabs, whatsapp, telegram, email, custom",
+            "action_description": "what the workflow should do",
+            "trigger_type": "schedule, webhook, manual, or other appropriate trigger",
+            "trigger_details": "specifics about the trigger (e.g., schedule time, webhook path)",
+            "additional_params": "any additional parameters needed for the workflow"
+          }
+          
+          Examples:
+          - Input: "Send me a daily summary of my sales at 9am" → 
+            {api_choice: "email", action_description: "send daily sales summary", trigger_type: "schedule", trigger_details: "daily at 9am"}
+            
+          - Input: "Notify me on Telegram when someone fills out my form" →
+            {api_choice: "telegram", action_description: "send notification when form filled", trigger_type: "webhook", trigger_details: "form submission webhook"}
+            
+          Be concise and accurate. Only return the JSON object.`
+        },
+        {
+          role: 'user',
+          content: userInput
+        }
+      ],
+      temperature: 0.1, // Low temperature for consistent, factual responses
+      max_tokens: 300
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      }
+    });
+
+    const content = response.data.choices[0].message.content.trim();
+    // Extract JSON from response (in case it includes additional text)
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    } else {
+      // Fallback to simple parsing if AI didn't return JSON
+      return simpleParseRequest(userInput);
+    }
+  } catch (error) {
+    console.error('Error analyzing user request with AI:', error.message);
+    // Fallback to simple parsing
+    return simpleParseRequest(userInput);
+  }
+}
+
+// Simple fallback parser when AI is not available
+function simpleParseRequest(userInput) {
+  const lowerInput = userInput.toLowerCase();
+  
+  // Determine API based on keywords
+  let apiChoice = 'custom';
+  if (lowerInput.includes('openai') || lowerInput.includes('chatgpt') || lowerInput.includes('gpt')) {
+    apiChoice = 'openai';
+  } else if (lowerInput.includes('gemini') || lowerInput.includes('google')) {
+    apiChoice = 'gemini';
+  } else if (lowerInput.includes('claude') || lowerInput.includes('anthropic')) {
+    apiChoice = 'claude';
+  } else if (lowerInput.includes('whatsapp')) {
+    apiChoice = 'whatsapp';
+  } else if (lowerInput.includes('telegram') || lowerInput.includes('notification')) {
+    apiChoice = 'telegram';
+  } else if (lowerInput.includes('email') || lowerInput.includes('gmail')) {
+    apiChoice = 'email';
+  } else if (lowerInput.includes('eleven') || lowerInput.includes('voice') || lowerInput.includes('tts')) {
+    apiChoice = 'elevenlabs';
+  }
+  
+  // Determine trigger type
+  let triggerType = 'manual';
+  let triggerDetails = 'manual trigger';
+  if (lowerInput.includes('daily') || lowerInput.includes('every day') || lowerInput.includes('day at')) {
+    triggerType = 'schedule';
+    triggerDetails = 'daily';
+  } else if (lowerInput.includes('hourly') || lowerInput.includes('every hour')) {
+    triggerType = 'schedule';
+    triggerDetails = 'hourly';
+  } else if (lowerInput.includes('when') || lowerInput.includes('webhook') || lowerInput.includes('form') || lowerInput.includes('submit')) {
+    triggerType = 'webhook';
+    triggerDetails = 'webhook trigger';
+  }
+  
+  return {
+    api_choice: apiChoice,
+    action_description: userInput,
+    trigger_type: triggerType,
+    trigger_details: triggerDetails,
+    additional_params: {}
+  };
+}
+
+// Function to construct N8N workflow based on AI analysis
 function constructWorkflow(session) {
-  // Determine the appropriate N8N node based on the selected API
+  const analysis = session.analysis || { api_choice: 'custom', action_description: 'default action', trigger_type: 'manual' };
+  
+  // Determine the appropriate N8N node based on the AI analysis
   let triggerNode, actionNode;
   
-  switch(session.selectedApi.id) {
+  switch(analysis.api_choice) {
     case 'openai':
-      triggerNode = {
-        id: "schedule-trigger",
-        name: "Schedule Trigger",
-        type: "n8n-nodes-base.scheduleTrigger",
-        position: [240, 300],
-        parameters: {
-          triggerTimes: {
-            item: [
-              {
-                hour: 9,
-                minute: 0
-              }
-            ]
-          }
-        }
-      };
+      triggerNode = createTriggerNode(analysis.trigger_type, analysis.trigger_details);
       
       actionNode = {
         id: "openai-node",
@@ -282,18 +378,7 @@ function constructWorkflow(session) {
       break;
       
     case 'gemini':
-      triggerNode = {
-        id: "webhook-trigger",
-        name: "Webhook",
-        type: "n8n-nodes-base.webhook",
-        position: [240, 300],
-        parameters: {
-          httpMethod: "POST",
-          path: `gemini-${Date.now() % 10000}`,
-          responseMode: "lastNode",
-          responseData: "allEntries"
-        }
-      };
+      triggerNode = createTriggerNode(analysis.trigger_type, analysis.trigger_details);
       
       actionNode = {
         id: "gemini-node",
@@ -308,16 +393,7 @@ function constructWorkflow(session) {
       break;
       
     case 'whatsapp':
-      triggerNode = {
-        id: "webhook-trigger",
-        name: "Webhook",
-        type: "n8n-nodes-base.webhook",
-        position: [240, 300],
-        parameters: {
-          httpMethod: "POST",
-          path: `whatsapp-${Date.now() % 10000}`
-        }
-      };
+      triggerNode = createTriggerNode(analysis.trigger_type, analysis.trigger_details);
       
       actionNode = {
         id: "whatsapp-node",
@@ -330,29 +406,14 @@ function constructWorkflow(session) {
           body: JSON.stringify({
             messaging_product: "whatsapp",
             to: "{{ $json.to }}",
-            text: { body: session.actionDescription }
+            text: { body: analysis.action_description }
           })
         }
       };
       break;
       
     case 'telegram':
-      triggerNode = {
-        id: "schedule-trigger",
-        name: "Schedule Trigger",
-        type: "n8n-nodes-base.scheduleTrigger",
-        position: [240, 300],
-        parameters: {
-          triggerTimes: {
-            item: [
-              {
-                hour: 8,
-                minute: 0
-              }
-            ]
-          }
-        }
-      };
+      triggerNode = createTriggerNode(analysis.trigger_type, analysis.trigger_details);
       
       actionNode = {
         id: "telegram-node",
@@ -362,28 +423,13 @@ function constructWorkflow(session) {
         parameters: {
           operation: "sendMessage",
           chatId: "YOUR_TELEGRAM_CHAT_ID", // This would be configured
-          text: session.actionDescription
+          text: analysis.action_description
         }
       };
       break;
       
     case 'email':
-      triggerNode = {
-        id: "schedule-trigger",
-        name: "Schedule Trigger",
-        type: "n8n-nodes-base.scheduleTrigger",
-        position: [240, 300],
-        parameters: {
-          triggerTimes: {
-            item: [
-              {
-                hour: 9,
-                minute: 0
-              }
-            ]
-          }
-        }
-      };
+      triggerNode = createTriggerNode(analysis.trigger_type, analysis.trigger_details);
       
       actionNode = {
         id: "email-node",
@@ -395,20 +441,14 @@ function constructWorkflow(session) {
           sender: "me",
           to: "recipient@example.com", // This would be configured
           subject: "Business Notification",
-          text: session.actionDescription
+          text: analysis.action_description
         }
       };
       break;
       
     default:
       // Default for other APIs
-      triggerNode = {
-        id: "manual-trigger",
-        name: "Manual Trigger",
-        type: "n8n-nodes-base.manualTrigger",
-        position: [240, 300],
-        parameters: {}
-      };
+      triggerNode = createTriggerNode(analysis.trigger_type, analysis.trigger_details);
       
       actionNode = {
         id: "http-request-node",
@@ -424,7 +464,7 @@ function constructWorkflow(session) {
   
   // Create the workflow structure
   const workflow = {
-    name: `Business Workflow: ${session.selectedApi.name} - ${session.actionDescription.substring(0, 30)}`,
+    name: `AI-Generated: ${analysis.api_choice} - ${analysis.action_description.substring(0, 30)}`,
     nodes: [triggerNode, actionNode],
     connections: {
       [triggerNode.name]: {
@@ -449,6 +489,50 @@ function constructWorkflow(session) {
   };
   
   return workflow;
+}
+
+// Helper function to create trigger nodes based on type
+function createTriggerNode(triggerType, triggerDetails) {
+  switch(triggerType) {
+    case 'schedule':
+      return {
+        id: "schedule-trigger",
+        name: "Schedule Trigger",
+        type: "n8n-nodes-base.scheduleTrigger",
+        position: [240, 300],
+        parameters: {
+          triggerTimes: {
+            item: [
+              {
+                hour: 9,
+                minute: 0
+              }
+            ]
+          }
+        }
+      };
+    case 'webhook':
+      return {
+        id: "webhook-trigger",
+        name: "Webhook",
+        type: "n8n-nodes-base.webhook",
+        position: [240, 300],
+        parameters: {
+          httpMethod: "POST",
+          path: `webhook-${Date.now() % 10000}`,
+          responseMode: "lastNode",
+          responseData: "allEntries"
+        }
+      };
+    default:
+      return {
+        id: "manual-trigger",
+        name: "Manual Trigger",
+        type: "n8n-nodes-base.manualTrigger",
+        position: [240, 300],
+        parameters: {}
+      };
+  }
 }
 
 // Help command
