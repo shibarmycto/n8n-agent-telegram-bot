@@ -281,7 +281,7 @@ bot.on('message', async (msg) => {
         session.analysis = analysis;
         
         // If it's clearly a workflow request, guide them to creation
-        if (['openai', 'gemini', 'claude', 'whatsapp', 'telegram', 'email'].includes(analysis.api_choice)) {
+        if (analysis.intent === 'workflow_creation') {
           const workflowPrompt = `
           I understand you want to set up: "${analysis.action_description}"
           
@@ -339,13 +339,24 @@ async function getConversationalAIResponse(userInput) {
   }
 
   try {
-    // Optimize for low latency and cost
+    // Enhanced system prompt to make responses more helpful and conversational
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4', // Using GPT-4 for better intelligence
       messages: [
         {
           role: 'system',
-          content: `You are a helpful and conversational AI assistant. Respond to the user's query in a friendly, helpful manner similar to how a knowledgeable human would respond. Be concise but informative.`
+          content: `You are an exceptionally helpful, intelligent, and conversational AI assistant. 
+          You engage in natural, friendly conversations while providing accurate and useful information.
+          Your responses should be:
+          - Clear and informative
+          - Friendly and approachable
+          - Concise but thorough
+          - Helpful in solving the user's actual problem
+          - Context-aware of the conversation
+          - Proactive in suggesting solutions when appropriate
+          
+          Always aim to be as helpful as possible, similar to how a knowledgeable human assistant would respond.
+          Take initiative to understand the user's real intent and provide the most valuable response.`
         },
         {
           role: 'user',
@@ -353,7 +364,9 @@ async function getConversationalAIResponse(userInput) {
         }
       ],
       temperature: 0.7, // Higher temperature for more natural responses
-      max_tokens: 300
+      max_tokens: 500, // Increased for more detailed responses
+      presence_penalty: 0.6, // Encourage talking about new topics
+      frequency_penalty: 0.5 // Reduce repetitive responses
     }, {
       headers: {
         'Content-Type': 'application/json',
@@ -392,28 +405,32 @@ async function analyzeUserRequest(userInput) {
   }
 
   try {
-    // Optimize for low latency and cost
+    // Enhanced analysis with better context understanding
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4', // Using GPT-4 for better understanding
       messages: [
         {
           role: 'system',
-          content: `You are an expert at interpreting user requests for N8N workflow creation. 
+          content: `You are an expert at interpreting user requests for automation and workflow creation. 
           Analyze the user's request and return a JSON object with the following structure:
           {
-            "api_choice": "one of: openai, gemini, claude, elevenlabs, whatsapp, telegram, email, custom",
-            "action_description": "what the workflow should do",
-            "trigger_type": "schedule, webhook, manual, or other appropriate trigger",
-            "trigger_details": "specifics about the trigger (e.g., schedule time, webhook path)",
-            "additional_params": "any additional parameters needed for the workflow"
+            "api_choice": "one of: openai, gemini, claude, elevenlabs, whatsapp, telegram, email, custom, or null if it's just a general question",
+            "action_description": "what the automation should do",
+            "trigger_type": "schedule, webhook, manual, or other appropriate trigger, or null if it's just a general question",
+            "trigger_details": "specifics about the trigger (e.g., schedule time, webhook path), or null if it's just a general question",
+            "additional_params": "any additional parameters needed for the workflow",
+            "intent": "either 'workflow_creation' if clearly requesting automation, or 'general_question' if asking for information or help"
           }
           
           Examples:
           - Input: "Send me a daily summary of my sales at 9am" → 
-            {api_choice: "email", action_description: "send daily sales summary", trigger_type: "schedule", trigger_details: "daily at 9am"}
+            {api_choice: "email", action_description: "send daily sales summary", trigger_type: "schedule", trigger_details: "daily at 9am", additional_params: {}, intent: "workflow_creation"}
             
           - Input: "Notify me on Telegram when someone fills out my form" →
-            {api_choice: "telegram", action_description: "send notification when form filled", trigger_type: "webhook", trigger_details: "form submission webhook"}
+            {api_choice: "telegram", action_description: "send notification when form filled", trigger_type: "webhook", trigger_details: "form submission webhook", additional_params: {}, intent: "workflow_creation"}
+            
+          - Input: "How are you?" →
+            {api_choice: null, action_description: "general greeting", trigger_type: null, trigger_details: null, additional_params: {}, intent: "general_question"}
             
           Be concise and accurate. Only return the JSON object.`
         },
@@ -422,8 +439,8 @@ async function analyzeUserRequest(userInput) {
           content: userInput
         }
       ],
-      temperature: 0.1, // Low temperature for consistent, factual responses
-      max_tokens: 300
+      temperature: 0.3, // Lower temperature for consistent, factual responses
+      max_tokens: 400
     }, {
       headers: {
         'Content-Type': 'application/json',
