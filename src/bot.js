@@ -134,10 +134,54 @@ bot.onText(/\/create/, (msg) => {
   });
 });
 
+// Additional dependencies
+const { exec } = require('child_process');
+
 // Handle text messages
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
+
+  // Handle agent management commands
+  if (text.startsWith('/agent')) {
+    const args = text.split(' ');
+    if (args.length < 2) {
+      bot.sendMessage(chatId, 'Usage: /agent <start|stop|status>');
+      return;
+    }
+    const command = args[1].toLowerCase();
+
+    if (command === 'start') {
+      exec('docker start n8n-agent-zero', (error, stdout, stderr) => {
+        if (error) {
+          bot.sendMessage(chatId, `Error starting agent: ${error.message}`);
+          return;
+        }
+        bot.sendMessage(chatId, `Agent started: ${stdout}`);
+      });
+    } else if (command === 'stop') {
+      exec('docker stop n8n-agent-zero', (error, stdout, stderr) => {
+        if (error) {
+          bot.sendMessage(chatId, `Error stopping agent: ${error.message}`);
+          return;
+        }
+        bot.sendMessage(chatId, `Agent stopped: ${stdout}`);
+      });
+    } else if (command === 'status') {
+      exec('docker ps -a --filter "name=n8n-agent-zero" --format "{{.Status}}"', (error, stdout, stderr) => {
+        if (error) {
+          bot.sendMessage(chatId, `Error getting agent status: ${error.message}`);
+          return;
+        }
+        const status = stdout.trim() || 'Not running';
+        bot.sendMessage(chatId, `Agent status: ${status}`);
+      });
+    } else {
+      bot.sendMessage(chatId, 'Unknown command. Usage: /agent <start|stop|status>');
+    }
+
+    return;
+  }
 
   // Commands are handled separately
   if (text.startsWith('/')) {
