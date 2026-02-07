@@ -1,15 +1,16 @@
 {
   "name": "n8n-agent-telegram-bot",
-  "version": "1.0.0",
-  "description": "A Telegram bot that helps users create N8N workflows",
+  "version": "1.0.1",
+  "description": "A Telegram bot that helps users create N8N workflows and more",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
     "dev": "nodemon src/bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.65.1",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "fs-extra": "^11.3.3",
+    "node-telegram-bot-api": "^0.65.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
@@ -20,7 +21,9 @@
     "n8n",
     "workflow",
     "automation",
-    "api"
+    "api",
+    "ai",
+    "voice"
   ],
   "author": "N8N Agent Bot",
   "license": "MIT"

@@ -1,5 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 // Bot token from Telegram
 const token = '7604717632:AAGSdQjNqLMpsE-Xpk4VNe12CcP3jB-OX1w';
@@ -14,6 +16,9 @@ const bot = new TelegramBot(token, { polling: true });
 
 // Store user sessions
 const userSessions = {};
+
+// Track voice mode for users
+const voiceModeUsers = new Set();
 
 // Predefined API options for reference
 const apiOptions = [
@@ -34,20 +39,76 @@ bot.onText(/\/start/, (msg) => {
   const welcomeMessage = `
   🤖 Welcome to the N8N Agent Bot!
   
-  I'm here to help you create N8N workflows quickly and easily.
+  I'm here to help you create N8N workflows and more!
   
   Available commands:
   /start - Show this message
   /create - Start creating a new workflow
   /list - List your existing workflows
   /help - Show help information
+  /voice - Toggle voice mode (speak responses with your voice)
+  /doc - Create a document
+  /ai - Chat with AI like a conversational assistant
   
-  Send any message to begin creating a workflow!
+  Send any message to begin!
   `;
   
   bot.sendMessage(chatId, welcomeMessage, {
     parse_mode: 'Markdown'
   });
+});
+
+// Voice toggle command
+bot.onText(/\/voice/, (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  
+  if (voiceModeUsers.has(userId)) {
+    voiceModeUsers.delete(userId);
+    bot.sendMessage(chatId, '🔇 Voice mode disabled. I will now respond with text only.');
+  } else {
+    voiceModeUsers.add(userId);
+    bot.sendMessage(chatId, '🔊 Voice mode enabled. I will now respond with your voice when possible.');
+  }
+});
+
+// Document creation command
+bot.onText(/\/doc (.+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  const docContent = match[1];
+  
+  // Create a simple text document
+  const docPath = `/tmp/response_${chatId}_${Date.now()}.txt`;
+  fs.writeFileSync(docPath, docContent);
+  
+  // Send the document back to the user
+  bot.sendDocument(chatId, docPath).then(() => {
+    // Clean up the temporary file after sending
+    fs.unlinkSync(docPath);
+  });
+});
+
+// Document creation command without content
+bot.onText(/\/doc/, (msg) => {
+  const chatId = msg.chat.id;
+  
+  bot.sendMessage(chatId, '📝 Please provide content for the document. Usage: /doc your content here');
+});
+
+// AI conversation command
+bot.onText(/\/ai (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userQuery = match[1];
+  
+  bot.sendMessage(chatId, '🤖 Thinking...');
+  
+  try {
+    const response = await getConversationalAIResponse(userQuery);
+    await sendResponseWithPotentialVoice(chatId, response);
+  } catch (error) {
+    console.error('Error in AI conversation:', error);
+    bot.sendMessage(chatId, '❌ Sorry, I had trouble processing your request.');
+  }
 });
 
 // Create workflow command
@@ -79,6 +140,12 @@ bot.on('message', async (msg) => {
   
   // Get user session or create new one
   let session = userSessions[chatId] || { step: 'initial' };
+  
+  // Check if it's a command that should be handled separately
+  if (text.startsWith('/')) {
+    // Commands are handled by their respective listeners
+    return;
+  }
   
   try {
     if (session.step === 'select_api') {
@@ -203,15 +270,36 @@ bot.on('message', async (msg) => {
       }
     }
     else {
-      // Default message
-      const defaultMsg = `
-      🤖 Hello! I'm the N8N Agent Bot.
+      // For initial conversations or when not in workflow creation mode,
+      // treat as a general AI query
+      bot.sendMessage(chatId, '🤖 Thinking...');
       
-      Use /create to start building a new workflow.
-      Use /help to see all available commands.
-      `;
-      
-      bot.sendMessage(chatId, defaultMsg, { parse_mode: 'Markdown' });
+      try {
+        // Analyze if this is a workflow request or a general question
+        const analysis = await analyzeUserRequest(text);
+        session.analysis = analysis;
+        
+        // If it's clearly a workflow request, guide them to creation
+        if (['openai', 'gemini', 'claude', 'whatsapp', 'telegram', 'email'].includes(analysis.api_choice)) {
+          const workflowPrompt = `
+          I understand you want to set up: "${analysis.action_description}"
+          
+          Would you like me to help you create a workflow for this? 
+          Reply with /create to start the workflow creation process,
+          or ask me anything else you'd like to know.
+          `;
+          
+          await sendResponseWithPotentialVoice(chatId, workflowPrompt);
+        } else {
+          // Treat as general AI conversation
+          const response = await getConversationalAIResponse(text);
+          await sendResponseWithPotentialVoice(chatId, response);
+        }
+      } catch (error) {
+        console.error('Error processing message:', error);
+        const fallbackResponse = "I'm sorry, I had trouble processing your request. You can try /ai followed by your question for direct AI assistance.";
+        await sendResponseWithPotentialVoice(chatId, fallbackResponse);
+      }
     }
   } catch (error) {
     console.error('Error handling message:', error);
@@ -240,6 +328,58 @@ async function createN8NWorkflow(session) {
   } catch (error) {
     console.error('Error creating N8N workflow:', error.response?.data || error.message);
     throw error;
+  }
+}
+
+// Function to get conversational AI response (more human-like responses)
+async function getConversationalAIResponse(userInput) {
+  if (!OPENAI_API_KEY) {
+    return "I'm sorry, but I need an OpenAI API key to provide conversational responses.";
+  }
+
+  try {
+    // Optimize for low latency and cost
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a helpful and conversational AI assistant. Respond to the user's query in a friendly, helpful manner similar to how a knowledgeable human would respond. Be concise but informative.`
+        },
+        {
+          role: 'user',
+          content: userInput
+        }
+      ],
+      temperature: 0.7, // Higher temperature for more natural responses
+      max_tokens: 300
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      }
+    });
+
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Error getting conversational AI response:', error.message);
+    return "I'm sorry, I had trouble processing your request. Could you try rephrasing?";
+  }
+}
+
+// Function to send response with potential voice output
+async function sendResponseWithPotentialVoice(chatId, text) {
+  const userId = chatId; // Using chatId as userId for simplicity
+  
+  if (voiceModeUsers.has(userId)) {
+    // In a real implementation, this would use your voice sample
+    // For now, we'll send both text and indicate voice would be used
+    await bot.sendMessage(chatId, `🗣️ *Voice Response:* ${text}`, { parse_mode: 'Markdown' });
+    
+    // In the future, this would generate audio using your voice sample
+    // and send it as a voice message
+  } else {
+    await bot.sendMessage(chatId, text);
   }
 }
 
