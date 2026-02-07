@@ -21,17 +21,8 @@ const userSessions = {};
 // Track voice mode for users
 const voiceModeUsers = new Set();
 
-// Predefined API options for reference
-const apiOptions = [
-  { id: 'openai', name: 'OpenAI API', description: 'ChatGPT, GPT-4 models' },
-  { id: 'gemini', name: 'Google Gemini API', description: 'Gemini models' },
-  { id: 'claude', name: 'Anthropic Claude API', description: 'Claude models' },
-  { id: 'elevenlabs', name: 'ElevenLabs API', description: 'Text-to-speech' },
-  { id: 'whatsapp', name: 'WhatsApp Business API', description: 'Send WhatsApp messages' },
-  { id: 'telegram', name: 'Telegram Bot API', description: 'Send notifications to Telegram' },
-  { id: 'email', name: 'Email Service', description: 'Send automated emails' },
-  { id: 'custom', name: 'Custom API', description: 'Your own API endpoint' }
-];
+// Predefined API options are removed as N8N-related workflow creation is no longer needed
+const apiOptions = [];
 
 // Start command
 bot.onText(/\/start/, (msg) => {
@@ -138,175 +129,25 @@ bot.onText(/\/create/, (msg) => {
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
-  
-  // Get user session or create new one
-  let session = userSessions[chatId] || { step: 'initial' };
-  
-  // Check if it's a command that should be handled separately
+
+  // Commands are handled separately
   if (text.startsWith('/')) {
-    // Commands are handled by their respective listeners
     return;
   }
-  
+
+  bot.sendMessage(chatId, '🤖 Thinking...');
+
   try {
-    if (session.step === 'select_api') {
-      // Find selected API
-      const selectedApi = apiOptions.find(api => 
-        text.includes(api.name) || text.toLowerCase().includes(api.id)
-      );
-      
-      if (selectedApi) {
-        session.selectedApi = selectedApi;
-        session.step = 'define_action';
-        
-        const actionPrompt = `
-        You've selected *${selectedApi.name}*.
-        
-        What would you like this API to do in your workflow?
-        
-        Examples:
-        - Send a notification when triggered
-        - Process incoming data
-        - Generate content based on input
-        - Respond to specific events
-        
-        Please describe what you want the ${selectedApi.name} API to do:
-        `;
-        
-        bot.sendMessage(chatId, actionPrompt, { parse_mode: 'Markdown' });
-      } else {
-        // Show API options again
-        let apiList = "Please select a valid API from the list:\n\n";
-        apiOptions.forEach((api, index) => {
-          apiList += `${index + 1}. *${api.name}*\n_${api.description}_\n\n`;
-        });
-        
-        bot.sendMessage(chatId, apiList, {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            keyboard: apiOptions.map(api => [`Select ${api.name}`]),
-            one_time_keyboard: true
-          }
-        });
-      }
-    } 
-    else if (session.step === 'define_action') {
-      session.actionDescription = text;
-      session.step = 'define_trigger';
-      
-      const triggerPrompt = `
-      Great! You want the *${session.selectedApi.name}* to: ${text}
-      
-      Now, when should this workflow be triggered?
-      
-      Options:
-      - On a schedule (daily, hourly, etc.)
-      - When receiving a webhook
-      - When a specific event occurs
-      - Manually triggered
-      
-      Please specify when you want this workflow to run:
-      `;
-      
-      bot.sendMessage(chatId, triggerPrompt, { parse_mode: 'Markdown' });
-    }
-    else if (session.step === 'define_trigger') {
-      session.trigger = text;
-      session.step = 'confirm';
-      
-      const confirmation = `
-      📋 Workflow Summary:
-      
-      *API*: ${session.selectedApi.name}
-      *Action*: ${session.actionDescription}
-      *Trigger*: ${session.trigger}
-      
-      Does this look correct? Reply with "yes" to create the workflow or "no" to start over.
-      `;
-      
-      bot.sendMessage(chatId, confirmation, { 
-        parse_mode: 'Markdown',
-        reply_markup: {
-          keyboard: [['Yes', 'No']],
-          one_time_keyboard: true
-        }
-      });
-    }
-    else if (session.step === 'confirm') {
-      if (text.toLowerCase().includes('yes') || text.toLowerCase() === 'yes') {
-        // Create the workflow
-        bot.sendMessage(chatId, '🔄 Creating your N8N workflow... Please wait.');
-        
-        try {
-          // Here we would call the N8N API to create the workflow
-          // This is a placeholder for the actual N8N API call
-          const workflowId = await createN8NWorkflow(session);
-          
-          const successMessage = `
-          ✅ Success! Your workflow has been created.
-          
-          *Workflow ID*: ${workflowId}
-          *API*: ${session.selectedApi.name}
-          *Action*: ${session.actionDescription}
-          *Trigger*: ${session.trigger}
-          
-          Your workflow is now active and running on your N8N server.
-          
-          /create - Create another workflow
-          /list - View your workflows
-          `;
-          
-          bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
-        } catch (error) {
-          console.error('Error creating workflow:', error);
-          bot.sendMessage(chatId, '❌ Error creating workflow. Please try again.');
-        }
-        
-        // Reset session
-        delete userSessions[chatId];
-      } else {
-        // Reset and start over
-        delete userSessions[chatId];
-        bot.sendMessage(chatId, '🔄 Starting over. Use /create to begin a new workflow.');
-      }
-    }
-    else {
-      // For initial conversations or when not in workflow creation mode,
-      // treat as a general AI query
-      bot.sendMessage(chatId, '🤖 Thinking...');
-      
-      try {
-        // Analyze if this is a workflow request or a general question
-        const analysis = await analyzeUserRequest(text);
-        session.analysis = analysis;
-        
-        // If it's clearly a workflow request, guide them to creation
-        if (analysis.intent === 'workflow_creation') {
-          const workflowPrompt = `
-          I understand you want to set up: "${analysis.action_description}"
-          
-          Would you like me to help you create a workflow for this? 
-          Reply with /create to start the workflow creation process,
-          or ask me anything else you'd like to know.
-          `;
-          
-          await sendResponseWithPotentialVoice(chatId, workflowPrompt);
-        } else {
-          // Treat as general AI conversation
-          const response = await getConversationalAIResponse(text);
-          await sendResponseWithPotentialVoice(chatId, response);
-        }
-      } catch (error) {
-        console.error('Error processing message:', error);
-        const fallbackResponse = "I'm sorry, I had trouble processing your request. You can try /ai followed by your question for direct AI assistance.";
-        await sendResponseWithPotentialVoice(chatId, fallbackResponse);
-      }
-    }
+    // Respond conversationally using AI
+    const response = await getConversationalAIResponse(text);
+    await sendResponseWithPotentialVoice(chatId, response);
   } catch (error) {
-    console.error('Error handling message:', error);
-    bot.sendMessage(chatId, '❌ An error occurred. Please try again.');
+    console.error('Error processing message:', error);
+    const fallbackResponse = "I'm sorry, I had trouble processing your request. You can try /ai followed by your question for direct AI assistance.";
+    await sendResponseWithPotentialVoice(chatId, fallbackResponse);
   }
 });
+
 
 // Function to create N8N workflow
 async function createN8NWorkflow(session) {
