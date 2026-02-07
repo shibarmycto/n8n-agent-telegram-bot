@@ -1,0 +1,6 @@
+{
+  "n8nServerUrl": "http://your-n8n-server-url:5678",
+  "n8nApiKey": "your-n8n-api-key",
+  "telegramBotToken": "7604717632:AAGSdQjNqLMpsE-Xpk4VNe12CcP3jB-OX1w",
+  "port": 3000
+}
