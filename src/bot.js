@@ -9,7 +9,8 @@ const token = '7604717632:AAGSdQjNqLMpsE-Xpk4VNe12CcP3jB-OX1w';
 // N8N server configuration (you'll need to update this)
 const N8N_SERVER_URL = process.env.N8N_SERVER_URL; // Set this as an environment variable
 const N8N_API_KEY = process.env.N8N_API_KEY; // Set this as an environment variable
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Set this as an environment variable
+// OpenAI API key embedded directly in the code
+const OPENAI_API_KEY = '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';
 
 // Create bot instance
 const bot = new TelegramBot(token, { polling: true });

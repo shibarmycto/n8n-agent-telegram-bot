@@ -25,7 +25,7 @@ npm install
    - Rename `.env.example` to `.env`
    - Replace `YOUR_N8N_CLOUD_URL_HERE` with your actual N8N Cloud URL (if using N8N integration)
    - Replace `YOUR_N8N_CLOUD_API_KEY_HERE` with your actual N8N Cloud API key (if using N8N integration)
-   - Your OpenAI API key is already configured
+   - NOTE: Your OpenAI API key is already embedded in the source code for easier deployment
 
 3. Run the bot:
 ```bash
