@@ -31,22 +31,31 @@ bot.onText(/\/start/, (msg) => {
   const welcomeMessage = `
   🤖 Welcome to the N8N Agent Bot!
   
-  I'm here to help you create N8N workflows and more!
+  I am here to chat, help create documents, talk using your voice, and assist you with AI.
   
-  Available commands:
-  /start - Show this message
-  /create - Start creating a new workflow
-  /list - List your existing workflows
-  /help - Show help information
-  /voice - Toggle voice mode (speak responses with your voice)
-  /doc - Create a document
-  /ai - Chat with AI like a conversational assistant
+  Use the buttons below or commands at any time:
   
-  Send any message to begin!
+  - /start
+  - /voice
+  - /doc
+  - /ai
+  - /help
   `;
   
+  // Persistent keyboard with buttons
+  const keyboard = {
+    keyboard: [
+      [{ text: '/start' }, { text: '/voice' }],
+      [{ text: '/doc' }, { text: '/ai' }],
+      [{ text: '/help' }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  };
+  
   bot.sendMessage(chatId, welcomeMessage, {
-    parse_mode: 'Markdown'
+    parse_mode: 'Markdown',
+    reply_markup: keyboard
   });
 });
 
