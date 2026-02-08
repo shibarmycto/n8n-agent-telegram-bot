@@ -1,5 +1,16 @@
+
+// Import required libraries
+const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
+const { exec } = require('child_process');
+
+// Initialize the bot
+const token = '7604717632:AAGSdQjNqLMpsE-Xpk4VNe12CcP3jB-OX1w';
+const bot = new TelegramBot(token, { polling: true });
+
 // User API key management
 const userApiKeys = new Map();
+const admins = new Set(['memecorpofficial']);
 
 bot.onText(/\/apikey (add|update|remove)\s+@?(\w+)/, async (msg, match) => {
   const chatId = msg.chat.id;
